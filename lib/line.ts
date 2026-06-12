@@ -11,9 +11,8 @@ type QuickReplyItem = {
   action: { type: 'message'; label: string; text: string }
 }
 
-type LineMessage =
-  | { type: 'text'; text: string }
-  | { type: 'text'; text: string; quickReply: { items: QuickReplyItem[] } }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LineMessage = Record<string, any>
 
 type Transaction = {
   id: string
@@ -53,12 +52,177 @@ export async function replyMessage(replyToken: string, text: string) {
   await sendReply(replyToken, [{ type: 'text', text }])
 }
 
+async function replyFlex(replyToken: string, altText: string, contents: object) {
+  await sendReply(replyToken, [{ type: 'flex', altText, contents }])
+}
+
 async function replyWithQuickReply(
   replyToken: string,
   text: string,
   items: QuickReplyItem[]
 ) {
   await sendReply(replyToken, [{ type: 'text', text, quickReply: { items } }])
+}
+
+// ─── Flex Message builders ────────────────────────────────────────────────────
+
+function buildSummaryFlex(
+  monthName: string,
+  income: number,
+  expense: number,
+  balance: number,
+  monthlyTax: number
+) {
+  const balanceColor = balance >= 0 ? '#16a34a' : '#dc2626'
+
+  const row = (label: string, value: string, valueColor = '#111827') => ({
+    type: 'box',
+    layout: 'horizontal',
+    contents: [
+      { type: 'text', text: label, size: 'sm', color: '#6b7280', flex: 3 },
+      { type: 'text', text: value, size: 'sm', color: valueColor, align: 'end', weight: 'bold', flex: 4 },
+    ],
+    paddingTop: '8px',
+  })
+
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#166534',
+      paddingAll: '16px',
+      contents: [
+        { type: 'text', text: '📊 สรุปรายรับ-รายจ่าย', color: '#dcfce7', size: 'xs', weight: 'bold' },
+        { type: 'text', text: monthName, color: '#ffffff', size: 'lg', weight: 'bold', margin: 'xs' },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '16px',
+      contents: [
+        row('💰 รายรับรวม', `${fmt(income)} บาท`, '#16a34a'),
+        row('💸 รายจ่ายรวม', `${fmt(expense)} บาท`, '#dc2626'),
+        { type: 'separator', margin: '12px' },
+        row('📈 คงเหลือ', `${fmt(balance)} บาท`, balanceColor),
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f0fdf4',
+      paddingAll: '14px',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '🧾 เก็บไว้สำหรับภาษี', size: 'sm', color: '#15803d', flex: 3 },
+            { type: 'text', text: `~${fmt(monthlyTax)} บาท/เดือน`, size: 'sm', color: '#15803d', align: 'end', weight: 'bold', flex: 4 },
+          ],
+        },
+        {
+          type: 'text',
+          text: 'ประมาณการจากรายรับเดือนนี้ × 12',
+          size: 'xxs',
+          color: '#86efac',
+          margin: '6px',
+        },
+      ],
+    },
+  }
+}
+
+function buildTransactionListFlex(monthName: string, rows: Transaction[]) {
+  const txRows = rows.slice(0, 10).map((t, i) => {
+    const isIncome = t.type === 'income'
+    return {
+      type: 'box',
+      layout: 'horizontal',
+      paddingTop: '8px',
+      contents: [
+        {
+          type: 'text',
+          text: `${i + 1}.`,
+          size: 'xs',
+          color: '#9ca3af',
+          flex: 1,
+          gravity: 'center',
+        },
+        {
+          type: 'text',
+          text: isIncome ? '💰 รายรับ' : '💸 รายจ่าย',
+          size: 'sm',
+          color: isIncome ? '#16a34a' : '#dc2626',
+          flex: 4,
+          gravity: 'center',
+        },
+        {
+          type: 'text',
+          text: `${fmt(Number(t.amount))} บาท`,
+          size: 'sm',
+          color: '#111827',
+          align: 'end',
+          weight: 'bold',
+          flex: 4,
+          gravity: 'center',
+        },
+        {
+          type: 'text',
+          text: fmtDate(t.date),
+          size: 'xxs',
+          color: '#9ca3af',
+          align: 'end',
+          flex: 3,
+          gravity: 'center',
+        },
+      ],
+    }
+  })
+
+  const emptyState = {
+    type: 'box',
+    layout: 'vertical',
+    paddingAll: '20px',
+    contents: [
+      { type: 'text', text: '📭 ยังไม่มีรายการเดือนนี้', align: 'center', color: '#9ca3af', size: 'sm' },
+    ],
+  }
+
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#166534',
+      paddingAll: '16px',
+      contents: [
+        { type: 'text', text: '📋 รายการธุรกรรม', color: '#dcfce7', size: 'xs', weight: 'bold' },
+        { type: 'text', text: monthName, color: '#ffffff', size: 'lg', weight: 'bold', margin: 'xs' },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '16px',
+      contents: rows.length > 0 ? txRows : [emptyState],
+    },
+    ...(rows.length > 0 && {
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#f9fafb',
+        paddingAll: '12px',
+        contents: [
+          { type: 'text', text: 'แก้ไข → "แก้ไข 1 8000" หรือ "แก้ไข 1 รายรับ"', size: 'xxs', color: '#6b7280' },
+          { type: 'text', text: 'ลบ → "ลบ 1"', size: 'xxs', color: '#6b7280', margin: '4px' },
+        ],
+      },
+    }),
+  }
 }
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
@@ -179,13 +343,6 @@ function typeLabel(type: 'income' | 'expense') {
   return type === 'income' ? '💰 รายรับ' : '💸 รายจ่าย'
 }
 
-function buildTransactionList(rows: Transaction[]): string {
-  if (rows.length === 0) return '📭 ยังไม่มีรายการเดือนนี้'
-  const lines = rows
-    .slice(0, 10)
-    .map((t, i) => `${i + 1}. ${typeLabel(t.type)}  ${fmt(Number(t.amount))} บาท  (${fmtDate(t.date)})`)
-  return lines.join('\n')
-}
 
 // ─── Welcome (follow event) ───────────────────────────────────────────────────
 
@@ -241,18 +398,9 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
   if (trimmed === 'รายการ') {
     const userId = await getOrCreateUser(lineUserId)
     const rows = await getMonthlyTransactions(userId)
-    const list = buildTransactionList(rows)
     const now = new Date()
     const monthName = now.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
-    const msg = [
-      `📋 รายการ${monthName}`,
-      '',
-      list,
-      ...(rows.length > 0
-        ? ['', 'แก้ไข → "แก้ไข 1 8000" หรือ "แก้ไข 1 รายรับ"', 'ลบ → "ลบ 1"']
-        : []),
-    ].join('\n')
-    await replyMessage(replyToken, msg)
+    await replyFlex(replyToken, `รายการ${monthName}`, buildTransactionListFlex(monthName, rows))
     return
   }
 
@@ -324,21 +472,11 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     const s = await getMonthlySummary(userId)
     const now = new Date()
     const monthName = now.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
-    const lines = [
-      `เบาใจสรุปให้แล้วนะครับ 📊`,
-      `${monthName}`,
-      '',
-      `💰 รายรับรวม:   ${fmt(s.income)} บาท`,
-      `💸 รายจ่ายรวม:  ${fmt(s.expense)} บาท`,
-      `📈 คงเหลือ:     ${fmt(s.balance)} บาท`,
-      '',
-      `🧾 ควรเก็บไว้สำหรับภาษี: ~${fmt(s.monthlyTaxSetAside)} บาท/เดือน`,
-      '(ประมาณการจากรายรับเดือนนี้ × 12)',
-    ]
-    if (s.income === 0) {
-      lines.push('', 'ยังไม่มีรายการเดือนนี้ครับ พิมพ์จำนวนเงินเพื่อเริ่มบันทึกได้เลย')
-    }
-    await replyMessage(replyToken, lines.join('\n'))
+    await replyFlex(
+      replyToken,
+      `สรุป${monthName}`,
+      buildSummaryFlex(monthName, s.income, s.expense, s.balance, s.monthlyTaxSetAside)
+    )
     return
   }
 
