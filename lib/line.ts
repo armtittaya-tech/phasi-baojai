@@ -187,6 +187,25 @@ function buildTransactionList(rows: Transaction[]): string {
   return lines.join('\n')
 }
 
+// ─── Welcome (follow event) ───────────────────────────────────────────────────
+
+export async function handleFollowEvent(replyToken: string, lineUserId: string) {
+  await getOrCreateUser(lineUserId)
+  await replyMessage(
+    replyToken,
+    [
+      'สวัสดีครับ 👋 ผมชื่อ "เบาใจ" ผู้ช่วยเรื่องภาษีของคุณ',
+      '',
+      'ผมจะช่วยคุณ',
+      '💰 บันทึกรายรับ-รายจ่าย',
+      '📊 คำนวณภาษีให้แบบเรียลไทม์',
+      '💡 บอกว่าควรเก็บเงินไว้เท่าไหร่สำหรับยื่นภาษี',
+      '',
+      'เริ่มต้นง่ายๆ แค่พิมพ์จำนวนเงินที่ได้รับหรือจ่ายไป เช่น "15000" แล้วเบาใจจะถามว่าเป็นรายรับหรือรายจ่ายครับ',
+    ].join('\n')
+  )
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleEvent(replyToken: string, text: string, lineUserId: string) {
@@ -199,7 +218,8 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     const amount = parseFloat(choiceMatch[2])
     const userId = await getOrCreateUser(lineUserId)
     await saveTransaction(userId, type, amount)
-    await replyMessage(replyToken, `✅ บันทึก${typeLabel(type)} ${fmt(amount)} บาท เรียบร้อยแล้ว`)
+    const label = type === 'income' ? 'รายรับ' : 'รายจ่าย'
+    await replyMessage(replyToken, `เบาใจบันทึก${label} ${fmt(amount)} บาท ให้แล้วครับ ✅`)
     return
   }
 
@@ -208,7 +228,7 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
   if (!isNaN(amount) && amount > 0) {
     await replyWithQuickReply(
       replyToken,
-      `${fmt(amount)} บาท — เป็นอะไรครับ?`,
+      `${fmt(amount)} บาท — เป็นรายรับหรือรายจ่ายครับ?`,
       [
         { type: 'action', action: { type: 'message', label: '💰 รายรับ', text: `รายรับ:${amount}` } },
         { type: 'action', action: { type: 'message', label: '💸 รายจ่าย', text: `รายจ่าย:${amount}` } },
@@ -229,7 +249,7 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
       '',
       list,
       ...(rows.length > 0
-        ? ['', 'พิมพ์ "ลบ 1" เพื่อลบรายการที่ 1', 'พิมพ์ "แก้ไข 1 8000" เพื่อแก้จำนวนเงิน', 'พิมพ์ "แก้ไข 1 รายรับ" เพื่อแก้ประเภท']
+        ? ['', 'แก้ไข → "แก้ไข 1 8000" หรือ "แก้ไข 1 รายรับ"', 'ลบ → "ลบ 1"']
         : []),
     ].join('\n')
     await replyMessage(replyToken, msg)
@@ -243,7 +263,7 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     const userId = await getOrCreateUser(lineUserId)
     const rows = await getMonthlyTransactions(userId)
     if (n < 0 || n >= rows.length) {
-      await replyMessage(replyToken, `❌ ไม่มีรายการที่ ${n + 1} พิมพ์ "รายการ" เพื่อดูรายการทั้งหมด`)
+      await replyMessage(replyToken, `ไม่มีรายการที่ ${n + 1} ครับ พิมพ์ "รายการ" เพื่อดูรายการทั้งหมด`)
       return
     }
     const target = rows[n]
@@ -251,10 +271,10 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     if (ok) {
       await replyMessage(
         replyToken,
-        `🗑️ ลบแล้ว: ${typeLabel(target.type)} ${fmt(Number(target.amount))} บาท (${fmtDate(target.date)})`
+        `ลบแล้วครับ — ${typeLabel(target.type)} ${fmt(Number(target.amount))} บาท (${fmtDate(target.date)}) 🗑️`
       )
     } else {
-      await replyMessage(replyToken, '❌ เกิดข้อผิดพลาด ลองใหม่อีกครั้งครับ')
+      await replyMessage(replyToken, 'เกิดข้อผิดพลาดครับ ลองใหม่อีกครั้งนะครับ')
     }
     return
   }
@@ -268,30 +288,28 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     const rows = await getMonthlyTransactions(userId)
 
     if (n < 0 || n >= rows.length) {
-      await replyMessage(replyToken, `❌ ไม่มีรายการที่ ${n + 1} พิมพ์ "รายการ" เพื่อดูรายการทั้งหมด`)
+      await replyMessage(replyToken, `ไม่มีรายการที่ ${n + 1} ครับ พิมพ์ "รายการ" เพื่อดูรายการทั้งหมด`)
       return
     }
 
     const target = rows[n]
 
-    // แก้ประเภท
     if (value === 'รายรับ' || value === 'รายจ่าย') {
       const newType = value === 'รายรับ' ? 'income' : 'expense'
       await updateTransactionType(userId, target.id, newType)
       await replyMessage(
         replyToken,
-        `✅ แก้ไขรายการที่ ${n + 1} เป็น${typeLabel(newType)} ${fmt(Number(target.amount))} บาท แล้วครับ`
+        `เบาใจแก้ไขรายการที่ ${n + 1} เป็น${typeLabel(newType)} ${fmt(Number(target.amount))} บาท แล้วครับ ✅`
       )
       return
     }
 
-    // แก้จำนวนเงิน
     const newAmount = parseFloat(value.replace(/,/g, ''))
     if (!isNaN(newAmount) && newAmount > 0) {
       await updateTransactionAmount(userId, target.id, newAmount)
       await replyMessage(
         replyToken,
-        `✅ แก้ไขรายการที่ ${n + 1} จาก ${fmt(Number(target.amount))} → ${fmt(newAmount)} บาท แล้วครับ`
+        `เบาใจแก้ไขรายการที่ ${n + 1} จาก ${fmt(Number(target.amount))} → ${fmt(newAmount)} บาท แล้วครับ ✅`
       )
       return
     }
@@ -307,31 +325,26 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     const now = new Date()
     const monthName = now.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })
     const lines = [
-      `📊 สรุป${monthName}`,
+      `เบาใจสรุปให้แล้วนะครับ 📊`,
+      `${monthName}`,
       '',
       `💰 รายรับรวม:   ${fmt(s.income)} บาท`,
       `💸 รายจ่ายรวม:  ${fmt(s.expense)} บาท`,
       `📈 คงเหลือ:     ${fmt(s.balance)} บาท`,
       '',
-      `🧾 ภาษีที่ควรเก็บ/เดือน: ~${fmt(s.monthlyTaxSetAside)} บาท`,
+      `🧾 ควรเก็บไว้สำหรับภาษี: ~${fmt(s.monthlyTaxSetAside)} บาท/เดือน`,
       '(ประมาณการจากรายรับเดือนนี้ × 12)',
     ]
-    if (s.income === 0) lines.push('', '📝 ยังไม่มีรายการเดือนนี้ ลองพิมพ์จำนวนเงินเพื่อบันทึกได้เลยครับ')
+    if (s.income === 0) {
+      lines.push('', 'ยังไม่มีรายการเดือนนี้ครับ พิมพ์จำนวนเงินเพื่อเริ่มบันทึกได้เลย')
+    }
     await replyMessage(replyToken, lines.join('\n'))
     return
   }
 
-  // ── help / default ────────────────────────────────────────────────────────────
+  // ── default ───────────────────────────────────────────────────────────────────
   await replyMessage(
     replyToken,
-    [
-      '📌 วิธีใช้',
-      '',
-      '💾 บันทึก → พิมพ์จำนวนเงิน เช่น 5000',
-      '📋 ดูรายการ → พิมพ์ "รายการ"',
-      '✏️ แก้ไข → "แก้ไข 1 8000" หรือ "แก้ไข 1 รายรับ"',
-      '🗑️ ลบ → "ลบ 1"',
-      '📊 สรุป → พิมพ์ "สรุป"',
-    ].join('\n')
+    'พิมพ์จำนวนเงินได้เลยครับ (เช่น 15000)\nหรือพิมพ์ "สรุป" เพื่อดูยอดรวมเดือนนี้'
   )
 }

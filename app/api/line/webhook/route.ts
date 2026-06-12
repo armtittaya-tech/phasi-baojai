@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifySignature, handleEvent } from '@/lib/line'
+import { verifySignature, handleEvent, handleFollowEvent } from '@/lib/line'
 
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
@@ -13,14 +13,18 @@ export async function POST(req: NextRequest) {
   const body = JSON.parse(rawBody)
 
   for (const event of body.events ?? []) {
-    if (event.type !== 'message' || event.message?.type !== 'text') continue
-
-    const text: string = event.message.text
     const replyToken: string = event.replyToken
     const lineUserId: string = event.source?.userId ?? ''
 
     try {
-      await handleEvent(replyToken, text, lineUserId)
+      if (event.type === 'follow') {
+        await handleFollowEvent(replyToken, lineUserId)
+        continue
+      }
+
+      if (event.type === 'message' && event.message?.type === 'text') {
+        await handleEvent(replyToken, event.message.text, lineUserId)
+      }
     } catch (err) {
       console.error('[LINE webhook] error:', err)
     }
