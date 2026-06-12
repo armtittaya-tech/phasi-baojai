@@ -123,6 +123,101 @@ function buildSummaryFlex(
   }
 }
 
+function buildDeductionFlex() {
+  const deductionRow = (label: string, max: string, note?: string) => ({
+    type: 'box',
+    layout: 'vertical',
+    paddingTop: '10px',
+    contents: [
+      {
+        type: 'box',
+        layout: 'horizontal',
+        contents: [
+          { type: 'text', text: label, size: 'sm', color: '#111827', flex: 5, wrap: true },
+          { type: 'text', text: max, size: 'sm', color: '#16a34a', align: 'end', weight: 'bold', flex: 4 },
+        ],
+      },
+      ...(note ? [{ type: 'text', text: note, size: 'xxs', color: '#9ca3af', margin: '4px', wrap: true }] : []),
+    ],
+  })
+
+  const separator = { type: 'separator', margin: '10px' }
+
+  const header = (emoji: string, title: string, bg: string) => ({
+    type: 'box',
+    layout: 'vertical',
+    backgroundColor: bg,
+    paddingAll: '14px',
+    contents: [
+      { type: 'text', text: emoji + ' ' + title, color: '#ffffff', size: 'md', weight: 'bold' },
+    ],
+  })
+
+  const card = (emoji: string, title: string, bg: string, rows: object[]) => ({
+    type: 'bubble',
+    size: 'kilo',
+    header: header(emoji, title, bg),
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '14px',
+      contents: rows,
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f9fafb',
+      paddingAll: '10px',
+      contents: [
+        { type: 'text', text: '* ปีภาษี 2567 | อ้างอิงกรมสรรพากร', size: 'xxs', color: '#9ca3af' },
+      ],
+    },
+  })
+
+  return {
+    type: 'carousel',
+    contents: [
+      card('👤', 'ลดหย่อนส่วนบุคคล', '#1e40af', [
+        deductionRow('ส่วนตัว', '60,000 บาท'),
+        separator,
+        deductionRow('คู่สมรส (ไม่มีรายได้)', '60,000 บาท'),
+        separator,
+        deductionRow('บุตร (คนละ)', '30,000 บาท', 'บุตรคนที่ 2+ เกิดปี 2561 เป็นต้นไป ได้ 60,000 บาท'),
+        separator,
+        deductionRow('บิดา-มารดา (คนละ)', '30,000 บาท', 'สูงสุด 4 คน (ต้องอายุ 60+ และรายได้ไม่เกิน 30,000/ปี)'),
+        separator,
+        deductionRow('ผู้พิการ/ทุพพลภาพ (คนละ)', '60,000 บาท'),
+      ]),
+
+      card('🛡️', 'ประกัน', '#166534', [
+        deductionRow('ประกันสังคม', 'สูงสุด 9,000 บาท'),
+        separator,
+        deductionRow('ประกันชีวิต', 'สูงสุด 100,000 บาท', 'รวมกับประกันสุขภาพไม่เกิน 100,000 บาท'),
+        separator,
+        deductionRow('ประกันสุขภาพ', 'สูงสุด 25,000 บาท', 'อยู่ในวงเงิน 100,000 ร่วมกับประกันชีวิต'),
+        separator,
+        deductionRow('ประกันชีวิตแบบบำนาญ', 'สูงสุด 200,000 บาท', 'รวม RMF/SSF/กบข. ไม่เกิน 500,000 บาท'),
+      ]),
+
+      card('📈', 'การลงทุน', '#7c3aed', [
+        deductionRow('กองทุน RMF', 'สูงสุด 500,000 บาท', '30% ของรายได้ | รวมกองทุนการออมเพื่อเกษียณอื่นๆ ไม่เกิน 500,000 บาท'),
+        separator,
+        deductionRow('กองทุน SSF', 'สูงสุด 200,000 บาท', '30% ของรายได้ | ถือครองขั้นต่ำ 10 ปี'),
+      ]),
+
+      card('🏠', 'อื่นๆ', '#92400e', [
+        deductionRow('ดอกเบี้ยเงินกู้ซื้อบ้าน', 'สูงสุด 100,000 บาท'),
+        separator,
+        deductionRow('ค่าฝากครรภ์/คลอดบุตร', 'สูงสุด 60,000 บาท/ครรภ์'),
+        separator,
+        deductionRow('เงินบริจาคการศึกษา/กีฬา', '2 เท่า ไม่เกิน 10% ของรายได้สุทธิ'),
+        separator,
+        deductionRow('เงินบริจาคทั่วไป', 'ไม่เกิน 10% ของรายได้สุทธิ'),
+      ]),
+    ],
+  }
+}
+
 function buildTransactionListFlex(monthName: string, rows: Transaction[]) {
   const txRows = rows.slice(0, 10).map((t, i) => {
     const isIncome = t.type === 'income'
@@ -454,6 +549,12 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     return
   }
 
+  // ── ลดหย่อน ───────────────────────────────────────────────────────────────────
+  if (trimmed === 'ลดหย่อน') {
+    await replyFlex(replyToken, 'รายการค่าลดหย่อนภาษี ปี 2567', buildDeductionFlex())
+    return
+  }
+
   // ── สรุป ─────────────────────────────────────────────────────────────────────
   if (trimmed === 'สรุป') {
     const userId = await getOrCreateUser(lineUserId)
@@ -471,6 +572,6 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
   // ── default ───────────────────────────────────────────────────────────────────
   await replyMessage(
     replyToken,
-    'พิมพ์จำนวนเงินได้เลยครับ (เช่น 15000)\nหรือพิมพ์ "สรุป" เพื่อดูยอดรวมเดือนนี้'
+    'พิมพ์จำนวนเงินได้เลยครับ (เช่น 15000)\nหรือพิมพ์ "สรุป" / "รายการ" / "ลดหย่อน"'
   )
 }
