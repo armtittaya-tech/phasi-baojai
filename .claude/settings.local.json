@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias \"@/*\" --yes)",
+      "Read(//usr/local/**)",
+      "Read(//Users/arm/.nvm/versions/**)",
+      "Bash(bash -lc \"which node && node --version\")",
+      "Bash(zsh -lc \"which node && node --version\")",
+      "Read(//Users/arm/**)",
+      "Read(//Users/arm/.nvm/alias/**)",
+      "Bash(ls /opt/homebrew/bin/ 2>/dev/null | head -20; which brew 2>/dev/null || echo \"no brew\")",
+      "Bash(mkdir -p \"/Users/arm/Desktop/Claude Cowork/Easy Tax/.claude\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(cp \"/Users/arm/Desktop/Claude Cowork/Easy Tax/index.html\" /tmp/phasi-baojai.html && echo \"ok\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp"
+    ]
+  }
+}
