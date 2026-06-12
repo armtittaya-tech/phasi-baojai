@@ -115,21 +115,9 @@ function buildSummaryFlex(
       backgroundColor: '#f0fdf4',
       paddingAll: '14px',
       contents: [
-        {
-          type: 'box',
-          layout: 'horizontal',
-          contents: [
-            { type: 'text', text: '🧾 เก็บไว้สำหรับภาษี', size: 'sm', color: '#15803d', flex: 3 },
-            { type: 'text', text: `~${fmt(monthlyTax)} บาท/เดือน`, size: 'sm', color: '#15803d', align: 'end', weight: 'bold', flex: 4 },
-          ],
-        },
-        {
-          type: 'text',
-          text: 'ประมาณการจากรายรับเดือนนี้ × 12',
-          size: 'xxs',
-          color: '#86efac',
-          margin: '6px',
-        },
+        { type: 'text', text: '🧾 ควรเก็บไว้สำหรับภาษี', size: 'xs', color: '#15803d', weight: 'bold' },
+        { type: 'text', text: `~${fmt(monthlyTax)} บาท/เดือน`, size: 'xl', color: '#15803d', weight: 'bold', margin: '4px' },
+        { type: 'text', text: 'ประมาณการจากรายรับเดือนนี้ × 12', size: 'xxs', color: '#86efac', margin: '4px' },
       ],
     },
   }
