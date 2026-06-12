@@ -21,6 +21,34 @@ type Transaction = {
   date: string
 }
 
+type Deduction = {
+  type: string
+  amount: number
+}
+
+// ─── Deduction type registry ──────────────────────────────────────────────────
+
+type DeductionMeta = { key: string; label: string; max: number; aliases: string[] }
+
+const DEDUCTION_TYPES: DeductionMeta[] = [
+  { key: 'life_insurance',    label: 'ประกันชีวิต',         max: 100000, aliases: ['ประกันชีวิต', 'ไลฟ์'] },
+  { key: 'health_insurance',  label: 'ประกันสุขภาพ',        max: 25000,  aliases: ['ประกันสุขภาพ', 'ประกันสุข'] },
+  { key: 'social_security',   label: 'ประกันสังคม',         max: 9000,   aliases: ['ประกันสังคม', 'สังคม'] },
+  { key: 'rmf',               label: 'กองทุน RMF',          max: 500000, aliases: ['rmf', 'RMF'] },
+  { key: 'ssf',               label: 'กองทุน SSF',          max: 200000, aliases: ['ssf', 'SSF'] },
+  { key: 'pvd',               label: 'กองทุนสำรองเลี้ยงชีพ', max: 500000, aliases: ['pvd', 'PVD', 'กองทุนสำรอง'] },
+  { key: 'provident_fund',    label: 'กบข./กองทุนบำเหน็จ',  max: 500000, aliases: ['กบข', 'กองทุนบำเหน็จ'] },
+  { key: 'education_donation',label: 'บริจาคเพื่อการศึกษา', max: 200000, aliases: ['บริจาคการศึกษา', 'บริจาคศึกษา'] },
+  { key: 'general_donation',  label: 'บริจาคทั่วไป',        max: 100000, aliases: ['บริจาค', 'บริจาคทั่วไป'] },
+]
+
+function findDeductionType(input: string): DeductionMeta | undefined {
+  const q = input.trim().toLowerCase()
+  return DEDUCTION_TYPES.find((d) =>
+    d.key === q || d.aliases.some((a) => a.toLowerCase() === q)
+  )
+}
+
 // ─── Signature verification ───────────────────────────────────────────────────
 
 export function verifySignature(body: string, signature: string): boolean {
@@ -71,7 +99,8 @@ function buildSummaryFlex(
   income: number,
   expense: number,
   balance: number,
-  monthlyTax: number
+  monthlyTax: number,
+  savedDeductions = 0
 ) {
   const balanceColor = balance >= 0 ? '#16a34a' : '#dc2626'
 
@@ -118,6 +147,9 @@ function buildSummaryFlex(
         { type: 'text', text: '🧾 ควรเก็บไว้สำหรับภาษี', size: 'xs', color: '#15803d', weight: 'bold' },
         { type: 'text', text: `~${fmt(monthlyTax)} บาท/เดือน`, size: 'xl', color: '#15803d', weight: 'bold', margin: '4px' },
         { type: 'text', text: 'ประมาณการจากรายรับเดือนนี้ × 12', size: 'xxs', color: '#86efac', margin: '4px' },
+        ...(savedDeductions > 0
+          ? [{ type: 'text', text: `รวมลดหย่อน ${fmt(savedDeductions + 60000)} บาท`, size: 'xxs', color: '#86efac', margin: '4px' }]
+          : [{ type: 'text', text: 'พิมพ์ "ลดหย่อน ประกันชีวิต 25000" เพื่อเพิ่มลดหย่อน', size: 'xxs', color: '#86efac', margin: '4px' }]),
       ],
     },
   }
@@ -355,16 +387,24 @@ async function getMonthlyTransactions(userId: string): Promise<Transaction[]> {
 }
 
 async function getMonthlySummary(userId: string) {
-  const rows = await getMonthlyTransactions(userId)
+  const [rows, deductions] = await Promise.all([
+    getMonthlyTransactions(userId),
+    getUserDeductions(userId),
+  ])
   const income = rows.filter((t) => t.type === 'income').reduce((s, t) => s + Number(t.amount), 0)
   const expense = rows.filter((t) => t.type === 'expense').reduce((s, t) => s + Number(t.amount), 0)
   const annualIncome = income * 12
-  const netIncome = Math.max(0, annualIncome - Math.min(annualIncome * 0.5, 100000) - 60000)
+  const savedDeductionsTotal = deductions.reduce((s, d) => s + Number(d.amount), 0)
+  const netIncome = Math.max(
+    0,
+    annualIncome - Math.min(annualIncome * 0.5, 100000) - 60000 - savedDeductionsTotal
+  )
   return {
     income,
     expense,
     balance: income - expense,
     monthlyTaxSetAside: calcProgressiveTax(netIncome) / 12,
+    savedDeductionsTotal,
   }
 }
 
@@ -393,6 +433,22 @@ async function updateTransactionType(userId: string, id: string, type: 'income' 
     .eq('id', id)
     .eq('user_id', userId)
   return !error
+}
+
+async function upsertDeduction(userId: string, type: string, amount: number): Promise<void> {
+  const { error } = await supabaseServer
+    .from('deductions')
+    .upsert({ user_id: userId, type, amount, updated_at: new Date().toISOString() }, { onConflict: 'user_id,type' })
+  if (error) throw error
+}
+
+async function getUserDeductions(userId: string): Promise<Deduction[]> {
+  const { data, error } = await supabaseServer
+    .from('deductions')
+    .select('type, amount')
+    .eq('user_id', userId)
+  if (error) throw error
+  return (data ?? []) as Deduction[]
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -426,6 +482,84 @@ function typeLabel(type: 'income' | 'expense') {
   return type === 'income' ? '💰 รายรับ' : '💸 รายจ่าย'
 }
 
+
+function buildUserDeductionsFlex(deductions: Deduction[]): object {
+  const rows = DEDUCTION_TYPES.map((meta) => {
+    const saved = deductions.find((d) => d.type === meta.key)
+    const amount = saved ? Number(saved.amount) : 0
+    const filled = amount > 0
+    return {
+      type: 'box',
+      layout: 'horizontal',
+      paddingTop: '10px',
+      contents: [
+        {
+          type: 'text',
+          text: meta.label,
+          size: 'sm',
+          color: filled ? '#111827' : '#9ca3af',
+          flex: 5,
+          gravity: 'center',
+        },
+        {
+          type: 'text',
+          text: filled ? `${fmt(amount)} บาท` : '—',
+          size: 'sm',
+          color: filled ? '#16a34a' : '#d1d5db',
+          align: 'end',
+          weight: filled ? 'bold' : 'regular',
+          flex: 4,
+          gravity: 'center',
+        },
+      ],
+    }
+  })
+
+  const total = deductions.reduce((s, d) => s + Number(d.amount), 0)
+
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#1e40af',
+      paddingAll: '16px',
+      contents: [
+        { type: 'text', text: '✨ ค่าลดหย่อนของคุณ', color: '#dbeafe', size: 'xs', weight: 'bold' },
+        { type: 'text', text: 'รวมทั้งปี', color: '#ffffff', size: 'lg', weight: 'bold', margin: 'xs' },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '16px',
+      contents: [
+        ...rows,
+        { type: 'separator', margin: '12px' },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          paddingTop: '10px',
+          contents: [
+            { type: 'text', text: 'รวมลดหย่อน', size: 'sm', color: '#374151', weight: 'bold', flex: 5 },
+            { type: 'text', text: `${fmt(total + 60000)} บาท`, size: 'sm', color: '#1d4ed8', align: 'end', weight: 'bold', flex: 4 },
+          ],
+        },
+        { type: 'text', text: '(รวมส่วนตัว 60,000 บาทแล้ว)', size: 'xxs', color: '#9ca3af', margin: '4px', align: 'end' },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#eff6ff',
+      paddingAll: '12px',
+      contents: [
+        { type: 'text', text: 'บันทึก → "ลดหย่อน ประกันชีวิต 25000"', size: 'xxs', color: '#3b82f6' },
+      ],
+    },
+  }
+}
 
 // ─── Welcome (follow event) ───────────────────────────────────────────────────
 
@@ -549,7 +683,39 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     return
   }
 
-  // ── ลดหย่อน ───────────────────────────────────────────────────────────────────
+  // ── ลดหย่อน [ประเภท] [จำนวน] — บันทึกค่าลดหย่อน ────────────────────────────
+  const saveDeductionMatch = trimmed.match(/^ลดหย่อน\s+(.+?)\s+(\d[\d,]*)$/)
+  if (saveDeductionMatch) {
+    const typeName = saveDeductionMatch[1].trim()
+    const amount = parseFloat(saveDeductionMatch[2].replace(/,/g, ''))
+    const meta = findDeductionType(typeName)
+    if (!meta) {
+      await replyMessage(
+        replyToken,
+        `ไม่รู้จักประเภท "${typeName}" ครับ\nลองพิมพ์ "ลดหย่อน" เพื่อดูรายการที่รองรับ`
+      )
+      return
+    }
+    const capped = Math.min(amount, meta.max)
+    const userId = await getOrCreateUser(lineUserId)
+    await upsertDeduction(userId, meta.key, capped)
+    const capNote = amount > meta.max ? `\n(จำกัดสูงสุด ${fmt(meta.max)} บาท ตามกฎหมาย)` : ''
+    await replyMessage(
+      replyToken,
+      `บันทึก${meta.label} ${fmt(capped)} บาท แล้วครับ ✅${capNote}\n\nพิมพ์ "ดูลดหย่อน" เพื่อดูรายการทั้งหมด`
+    )
+    return
+  }
+
+  // ── ดูลดหย่อน — แสดงรายการลดหย่อนที่บันทึกไว้ ────────────────────────────
+  if (trimmed === 'ดูลดหย่อน') {
+    const userId = await getOrCreateUser(lineUserId)
+    const deductions = await getUserDeductions(userId)
+    await replyFlex(replyToken, 'ค่าลดหย่อนของคุณ', buildUserDeductionsFlex(deductions))
+    return
+  }
+
+  // ── ลดหย่อน (ไม่มีพารามิเตอร์) — แสดง guide ──────────────────────────────
   if (trimmed === 'ลดหย่อน') {
     await replyFlex(replyToken, 'รายการค่าลดหย่อนภาษี ปี 2567', buildDeductionFlex())
     return
@@ -564,7 +730,7 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
     await replyFlex(
       replyToken,
       `สรุป${monthName}`,
-      buildSummaryFlex(monthName, s.income, s.expense, s.balance, s.monthlyTaxSetAside)
+      buildSummaryFlex(monthName, s.income, s.expense, s.balance, s.monthlyTaxSetAside, s.savedDeductionsTotal)
     )
     return
   }
@@ -572,6 +738,6 @@ export async function handleEvent(replyToken: string, text: string, lineUserId: 
   // ── default ───────────────────────────────────────────────────────────────────
   await replyMessage(
     replyToken,
-    'พิมพ์จำนวนเงินได้เลยครับ (เช่น 15000)\nหรือพิมพ์ "สรุป" / "รายการ" / "ลดหย่อน"'
+    'พิมพ์จำนวนเงินได้เลยครับ (เช่น 15000)\nหรือพิมพ์คำสั่ง:\n• "สรุป" — ดูภาษีประมาณการ\n• "รายการ" — ดูธุรกรรมเดือนนี้\n• "ลดหย่อน" — ดูรายการค่าลดหย่อน\n• "ดูลดหย่อน" — ดูที่บันทึกไว้\n• "ลดหย่อน ประกันชีวิต 25000" — บันทึกลดหย่อน'
   )
 }
